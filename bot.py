@@ -26,6 +26,7 @@ RUTBE_HIYERARSI = [
     ("OF-7 Tümgeneral", 31, 106625975),
     ("OF-8 Korgeneral", 32, 109072153),
     ("OF-9 Orgeneral", 33, 94616758),
+    ("OF-10 Mareşal", 255, 50212581),
     ("Genelkurmay", 34, 109072136),
     ("Genelkurmay Başkanı", 35, 94616597),
     ("Yüksek Askeri Şûra", 35, 109072096),
