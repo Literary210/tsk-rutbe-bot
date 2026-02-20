@@ -87,6 +87,18 @@ class RankBot(commands.Bot):
             pass
         return None
 
+    async def get_user_rank_in_group(self, user_id):
+        try:
+            async with self.session.get(f"https://groups.roblox.com/v2/users/{user_id}/groups/roles") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for g in data.get("data", []):
+                        if str(g.get("group", {}).get("id")) == ROBLOX_GROUP_ID:
+                            return g.get("role", {}).get("name"), g.get("role", {}).get("rank")
+        except:
+            pass
+        return None, None
+
     async def set_roblox_rank(self, user_id, role_id):
         if not ROBLOX_COOKIE or role_id == 0:
             return False, "Roblox'ta yok"
@@ -125,6 +137,17 @@ bot = RankBot()
 def get_seviye(rutbe):
     return RUTBE_SEVIYE.get(rutbe, 0)
 
+def get_rutbe_by_index(index):
+    if 0 <= index < len(RUTBE_HIYERARSI):
+        return RUTBE_HIYERARSI[index]
+    return None
+
+def find_rutbe_index(rutbe_name):
+    for i, r in enumerate(RUTBE_HIYERARSI):
+        if r[0] == rutbe_name:
+            return i
+    return -1
+
 def kullanici_seviye(member):
     return max([get_seviye(r.name) for r in member.roles], default=0)
 
@@ -133,58 +156,126 @@ def check_channel(interaction):
         return False, f"❌ Sadece **#{IZINLI_KANAL}** kanalında!"
     return True, ""
 
-def check_permission(user_seviye, hedef_rutbe):
-    hedef = get_seviye(hedef_rutbe)
+def check_permission(user_seviye, hedef_seviye):
     if user_seviye < MIN_YETKILI_SEVIYE:
         return False, "❌ En az **OF-6 Tuğgeneral** olmalısınız!"
-    if hedef >= user_seviye:
+    if hedef_seviye >= user_seviye:
         return False, "❌ Kendinizden yüksek/eşit rütbe veremezsiniz!"
     return True, ""
 
 async def rutbe_autocomplete(interaction, current):
     return [app_commands.Choice(name=r, value=r) for r in RUTBE_LISTESI if current.lower() in r.lower()][:25]
 
-async def send_rank_embed(interaction, action_type, username, rank, reason):
+@bot.tree.command(name="rütbe-terfi", description="Kullanıcıyı 1 rütbe yükselt")
+@app_commands.describe(kullanici="Roblox adı", sebep="Sebep")
+async def rutbe_terfi(interaction: discord.Interaction, kullanici: str, sebep: str):
     ok, msg = check_channel(interaction)
     if not ok:
         return await interaction.response.send_message(msg, ephemeral=True)
-    ok, msg = check_permission(kullanici_seviye(interaction.user), rank)
-    if not ok:
-        return await interaction.response.send_message(msg, ephemeral=True)
+    
     await interaction.response.defer()
-    roblox_id = await bot.get_roblox_user_id(username)
-    if roblox_id:
-        success, roblox_msg = await bot.set_roblox_rank(roblox_id, RUTBE_ROBLOX_ID.get(rank, 0))
-        roblox_status = f"✅ {roblox_msg}" if success else f"⚠️ {roblox_msg}"
-    else:
-        roblox_status = "⚠️ Kullanıcı bulunamadı"
-    colors = {"terfi": 0xC5A059, "tenzil": 0x601117, "degistir": 0x3E6D47}
-    titles = {"terfi": "⬆️ TERFİ", "tenzil": "⬇️ TENZİL", "degistir": "🔄 DEĞİŞİKLİK"}
-    embed = discord.Embed(title=titles.get(action_type), color=colors.get(action_type, 0x3E6D47), timestamp=datetime.now())
-    embed.add_field(name="👤 Kullanıcı", value=username, inline=True)
-    embed.add_field(name="🎖️ Rütbe", value=rank, inline=True)
-    embed.add_field(name="📝 Sebep", value=reason, inline=False)
+    
+    roblox_id = await bot.get_roblox_user_id(kullanici)
+    if not roblox_id:
+        return await interaction.followup.send("❌ Kullanıcı bulunamadı!")
+    
+    current_rank, _ = await bot.get_user_rank_in_group(roblox_id)
+    if not current_rank:
+        return await interaction.followup.send("❌ Kullanıcı grupta değil!")
+    
+    current_index = find_rutbe_index(current_rank)
+    if current_index == -1:
+        return await interaction.followup.send(f"❌ Mevcut rütbe bulunamadı: {current_rank}")
+    
+    new_index = current_index + 1
+    if new_index >= len(RUTBE_HIYERARSI):
+        return await interaction.followup.send("❌ Zaten en yüksek rütbede!")
+    
+    new_rank = RUTBE_HIYERARSI[new_index]
+    
+    ok, msg = check_permission(kullanici_seviye(interaction.user), new_rank[1])
+    if not ok:
+        return await interaction.followup.send(msg)
+    
+    success, roblox_msg = await bot.set_roblox_rank(roblox_id, new_rank[2])
+    roblox_status = f"✅ {roblox_msg}" if success else f"⚠️ {roblox_msg}"
+    
+    embed = discord.Embed(title="⬆️ TERFİ", color=0xC5A059, timestamp=datetime.now())
+    embed.add_field(name="👤 Kullanıcı", value=kullanici, inline=True)
+    embed.add_field(name="📊 Eski Rütbe", value=current_rank, inline=True)
+    embed.add_field(name="🎖️ Yeni Rütbe", value=new_rank[0], inline=True)
+    embed.add_field(name="📝 Sebep", value=sebep, inline=False)
     embed.add_field(name="🎮 Roblox", value=roblox_status, inline=False)
     embed.set_footer(text=f"Yapan: {interaction.user.display_name}")
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="rütbe-terfi", description="Terfi ettir")
-@app_commands.describe(kullanici="Roblox adı", rutbe="Yeni rütbe", sebep="Sebep")
-@app_commands.autocomplete(rutbe=rutbe_autocomplete)
-async def rutbe_terfi(interaction: discord.Interaction, kullanici: str, rutbe: str, sebep: str):
-    await send_rank_embed(interaction, "terfi", kullanici, rutbe, sebep)
-
-@bot.tree.command(name="rütbe-tenzil", description="Rütbe düşür")
-@app_commands.describe(kullanici="Roblox adı", rutbe="Yeni rütbe", sebep="Sebep")
-@app_commands.autocomplete(rutbe=rutbe_autocomplete)
-async def rutbe_tenzil(interaction: discord.Interaction, kullanici: str, rutbe: str, sebep: str):
-    await send_rank_embed(interaction, "tenzil", kullanici, rutbe, sebep)
+@bot.tree.command(name="rütbe-tenzil", description="Kullanıcıyı 1 rütbe düşür")
+@app_commands.describe(kullanici="Roblox adı", sebep="Sebep")
+async def rutbe_tenzil(interaction: discord.Interaction, kullanici: str, sebep: str):
+    ok, msg = check_channel(interaction)
+    if not ok:
+        return await interaction.response.send_message(msg, ephemeral=True)
+    
+    await interaction.response.defer()
+    
+    roblox_id = await bot.get_roblox_user_id(kullanici)
+    if not roblox_id:
+        return await interaction.followup.send("❌ Kullanıcı bulunamadı!")
+    
+    current_rank, _ = await bot.get_user_rank_in_group(roblox_id)
+    if not current_rank:
+        return await interaction.followup.send("❌ Kullanıcı grupta değil!")
+    
+    current_index = find_rutbe_index(current_rank)
+    if current_index == -1:
+        return await interaction.followup.send(f"❌ Mevcut rütbe bulunamadı: {current_rank}")
+    
+    new_index = current_index - 1
+    if new_index < 0:
+        return await interaction.followup.send("❌ Zaten en düşük rütbede!")
+    
+    new_rank = RUTBE_HIYERARSI[new_index]
+    
+    ok, msg = check_permission(kullanici_seviye(interaction.user), get_seviye(current_rank))
+    if not ok:
+        return await interaction.followup.send(msg)
+    
+    success, roblox_msg = await bot.set_roblox_rank(roblox_id, new_rank[2])
+    roblox_status = f"✅ {roblox_msg}" if success else f"⚠️ {roblox_msg}"
+    
+    embed = discord.Embed(title="⬇️ TENZİL", color=0x601117, timestamp=datetime.now())
+    embed.add_field(name="👤 Kullanıcı", value=kullanici, inline=True)
+    embed.add_field(name="📊 Eski Rütbe", value=current_rank, inline=True)
+    embed.add_field(name="🎖️ Yeni Rütbe", value=new_rank[0], inline=True)
+    embed.add_field(name="📝 Sebep", value=sebep, inline=False)
+    embed.add_field(name="🎮 Roblox", value=roblox_status, inline=False)
+    embed.set_footer(text=f"Yapan: {interaction.user.display_name}")
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="rütbe-değiştir", description="Rütbe değiştir")
 @app_commands.describe(kullanici="Roblox adı", rutbe="Yeni rütbe", sebep="Sebep")
 @app_commands.autocomplete(rutbe=rutbe_autocomplete)
 async def rutbe_degistir(interaction: discord.Interaction, kullanici: str, rutbe: str, sebep: str):
-    await send_rank_embed(interaction, "degistir", kullanici, rutbe, sebep)
+    ok, msg = check_channel(interaction)
+    if not ok:
+        return await interaction.response.send_message(msg, ephemeral=True)
+    ok, msg = check_permission(kullanici_seviye(interaction.user), get_seviye(rutbe))
+    if not ok:
+        return await interaction.response.send_message(msg, ephemeral=True)
+    await interaction.response.defer()
+    roblox_id = await bot.get_roblox_user_id(kullanici)
+    if roblox_id:
+        success, roblox_msg = await bot.set_roblox_rank(roblox_id, RUTBE_ROBLOX_ID.get(rutbe, 0))
+        roblox_status = f"✅ {roblox_msg}" if success else f"⚠️ {roblox_msg}"
+    else:
+        roblox_status = "⚠️ Kullanıcı bulunamadı"
+    embed = discord.Embed(title="🔄 DEĞİŞİKLİK", color=0x3E6D47, timestamp=datetime.now())
+    embed.add_field(name="👤 Kullanıcı", value=kullanici, inline=True)
+    embed.add_field(name="🎖️ Rütbe", value=rutbe, inline=True)
+    embed.add_field(name="📝 Sebep", value=sebep, inline=False)
+    embed.add_field(name="🎮 Roblox", value=roblox_status, inline=False)
+    embed.set_footer(text=f"Yapan: {interaction.user.display_name}")
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="grup-listele", description="Kullanıcının gruplarını listele")
 @app_commands.describe(kullanici_adi="Roblox adı")
