@@ -1,4 +1,3 @@
-```python
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -216,4 +215,4 @@ async def bot_durum(interaction: discord.Interaction):
 if __name__ == "__main__":
     token = os.environ.get('DISCORD_TOKEN')
     if token:
-        bot.run(token)```
+        bot.run(token)
