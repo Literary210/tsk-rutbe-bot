@@ -36,8 +36,7 @@ RUTBE_HIYERARSI = [
     ("Yönetim Kurulu Başkanı", 41, 94616570),
     ("Baş Geliştirici", 42, 94616579),
     ("Başbakan", 43, 94616576),
-    ("Yönetim Kurulu Başkan", 44, 50297941),
-    ("Başkomutan Yaveri", 150, 94616564),
+    ("Başkomutan Vekili", 150, 94616564),
     ("Başkomutan", 151, 50297900),
 ]
 
